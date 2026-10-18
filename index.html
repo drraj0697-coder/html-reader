@@ -65,6 +65,11 @@ svg.i.star{color:#f4a600;width:20px;height:20px;fill:#f4a600;margin-right:2px}
 .empty .big{margin-top:18px;display:inline-flex;gap:8px;align-items:center;background:var(--dark-btn);color:var(--dark-btn-ink);height:48px;padding:0 24px;border-radius:999px;font-weight:600}
 .tip{margin:18px 6px;color:var(--mut);font-size:15px;display:flex;gap:10px;align-items:flex-start}
 .tip button{margin-left:auto;color:var(--accent);font-weight:600}
+.fi.dir{background:color-mix(in srgb,#f4a600 18%,transparent);color:#e39a00}
+.crumb{display:inline-flex;align-items:center;gap:2px;height:40px;margin:2px 0 8px 2px;color:var(--accent);font-weight:600;font-size:19px}
+.crumb svg{width:22px;height:22px;transform:scaleX(-1)}
+.nm,.sz{max-width:100%}
+.sz.p{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* settings */
 .sec{margin:0 0 22px}
@@ -154,6 +159,7 @@ body.dropping #dropov{display:grid}
 <symbol id="i-disp" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3 9h18"/></symbol>
 <symbol id="i-net" viewBox="0 0 24 24"><path d="M3 9.5a14 14 0 0 1 18 0M6 13a9.5 9.5 0 0 1 12 0M9.2 16.4a5 5 0 0 1 5.6 0"/><circle cx="12" cy="19.4" r=".6"/></symbol>
 <symbol id="i-font" viewBox="0 0 24 24"><path d="M3.5 19 9 5l5.5 14M5.4 14.5h7.2M16 19l2.6-6.5L21.2 19M16.9 17.2h3.4"/></symbol>
+<symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5A1.5 1.5 0 0 1 5 6h4.2l2 2.3H19a1.5 1.5 0 0 1 1.5 1.5v7.7A1.5 1.5 0 0 1 19 19H5a1.5 1.5 0 0 1-1.5-1.5z"/></symbol>
 <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 15V4M8 8l4-4 4 4M6 11H5v9h14v-9h-1"/></symbol>
 <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M10 11v6M14 11v6M7 7l1 13h8l1-13M9 7V4h6v3"/></symbol>
 <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
@@ -195,6 +201,7 @@ body.dropping #dropov{display:grid}
 <div id="layer" hidden><div class="scrim" id="scrim"></div><div class="menus"><div class="menu" id="m1"></div><div class="menu" id="m2" hidden></div></div></div>
 <div id="toast" role="status" aria-live="polite"></div>
 <div id="dropov">Drop HTML files to add</div>
+<input type="file" id="inDir" webkitdirectory multiple hidden>
 <input type="file" id="inFiles" multiple accept=".html,.htm,.xhtml,text/html,application/xhtml+xml" hidden>
 
 <script>
@@ -207,7 +214,7 @@ const fmtSize=n=>n<1024?n+' B':n<1048576?Math.max(1,Math.round(n/1024))+' KB':(n
 const ico=(n,c)=>'<svg class="i'+(c?' '+c:'')+'"><use href="#i-'+n+'"/></svg>';
 const SCRIPT_END='<\/script>';
 
-const S={files:[],tab:'my',q:'',set:Object.assign({theme:'auto',display:'adjacent',net:true,fix:true,fmt:true,font:100},LS.get('set',{})),cur:null,sheet:null,mode:'adjacent',net:true,url:null,tip:LS.get('tipHidden',false)};
+const S={files:[],tab:'my',q:'',set:Object.assign({theme:'auto',display:'adjacent',net:true,fix:true,fmt:true,font:100},LS.get('set',{})),cur:null,sheet:null,path:[],dirList:[],dsel:null,mode:'adjacent',net:true,url:null,tip:LS.get('tipHidden',false)};
 
 /* ---------- storage ---------- */
 const DB={p:null,open(){if(!this.p)this.p=new Promise((res,rej)=>{try{const r=indexedDB.open('html-reader-pwa',1);r.onupgradeneeded=()=>r.result.createObjectStore('files',{keyPath:'id'});r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}catch(e){rej(e)}});return this.p},
@@ -225,21 +232,37 @@ const saveSet=()=>LS.set('set',S.set);
 /* ---------- library screen ---------- */
 const standalone=()=>navigator.standalone===true||matchMedia('(display-mode: standalone)').matches;
 const isiOS=()=>/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
-function list(){const q=S.q.trim().toLowerCase();return S.files.filter(f=>(S.tab!=='fav'||f.fav)&&(!q||f.name.toLowerCase().includes(q))).sort((a,b)=>a.name.localeCompare(b.name,undefined,{numeric:true,sensitivity:'base'}))}
+const clean=n=>String(n).replace(/\.(x?html?|shtml)$/i,'').replace(/_+/g,' ').replace(/\s+/g,' ').trim();
+const relOf=f=>f.rel||[];
+const nat=(a,b)=>a.localeCompare(b,undefined,{numeric:true,sensitivity:'base'});
+const inPath=(f,p)=>{const r=relOf(f);return p.every((x,i)=>r[i]===x)};
+function flatList(){const q=S.q.trim().toLowerCase();return S.files.filter(f=>(S.tab!=='fav'||f.fav)&&(!q||(clean(f.name)+' '+f.name+' '+relOf(f).map(clean).join(' ')).toLowerCase().includes(q))).sort((a,b)=>nat(clean(a.name),clean(b.name)))}
+function browse(){const p=S.path,d=new Map(),files=[];
+  for(const f of S.files){if(!inPath(f,p))continue;const r=relOf(f);if(r.length===p.length)files.push(f);else{const n=r[p.length];d.set(n,(d.get(n)||0)+1)}}
+  files.sort((a,b)=>nat(clean(a.name),clean(b.name)));
+  return{dirs:[...d].map(([name,count])=>({name,count,path:p.concat(name)})).sort((a,b)=>nat(clean(a.name),clean(b.name))),files}}
+const fileRow=(f,sub)=>'<button class="row" data-id="'+f.id+'"><span class="fi">'+ico('doc')+'</span><span class="tx"><span class="nm">'+esc(clean(f.name))+'</span><span class="sz p">'+esc(sub)+'</span></span>'+(f.fav?ico('star','star'):'')+ico('chev','chev')+'</button>';
 function render(){
+  const flat=S.tab==='fav'||!!S.q.trim();
+  if(S.tab==='my')while(S.path.length&&!S.files.some(f=>inPath(f,S.path)))S.path.pop();
   $$('.tabs button').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===S.tab));
   $('#cnt').textContent=S.files.length;
-  const ttl={my:'HTML Reader',fav:'Favorites',set:'Settings'}[S.tab];$('#ttl').textContent=ttl;
+  const ttl={my:S.path.length?clean(S.path[S.path.length-1]):'HTML Reader',fav:'Favorites',set:'Settings'}[S.tab];$('#ttl').textContent=ttl;
   $('#srch').style.display=S.tab==='set'?'none':'';
   const v=$('#view');
   if(S.tab==='set'){renderSettings(v);return}
-  const items=list();let h='';
-  if(!items.length){
-    h='<div class="card"><div class="empty">'+(S.files.length&&S.q?'<b>No matches</b>Try a different name.':S.tab==='fav'?'<b>No favorites yet</b>Open a file, tap the ••• button, then choose Add to Favorites.':'<b>No files yet</b>Add HTML files from the Files app, iCloud Drive or your computer.<br><button class="big" id="bigAdd">'+ico('plus')+'Add HTML files</button>')+'</div></div>'}
-  else h='<div class="card">'+items.map(f=>'<button class="row" data-id="'+f.id+'"><span class="fi">'+ico('doc')+'</span><span class="tx"><span class="nm">'+esc(f.name)+'</span><span class="sz">'+fmtSize(f.size)+'</span></span>'+(f.fav?ico('star','star'):'')+ico('chev','chev')+'</button>').join('')+'</div>';
+  let h='',n=0;S.dirList=[];
+  if(flat){const items=flatList();n=items.length;
+    h=n?'<div class="card">'+items.map(f=>fileRow(f,(relOf(f).length?relOf(f).map(clean).join(' › ')+' · ':'')+fmtSize(f.size))).join('')+'</div>':''}
+  else{const {dirs,files}=browse();n=dirs.length+files.length;S.dirList=dirs;
+    if(S.path.length)h+='<button class="crumb" id="back">'+ico('chev')+esc(S.path.length>1?clean(S.path[S.path.length-2]):'All files')+'</button>';
+    h+=n?'<div class="card">'+dirs.map((d,i)=>'<button class="row" data-dir="'+i+'"><span class="fi dir">'+ico('folder')+'</span><span class="tx"><span class="nm">'+esc(clean(d.name))+'</span><span class="sz">'+d.count+' file'+(d.count===1?'':'s')+'</span></span>'+ico('chev','chev')+'</button>').join('')+files.map(f=>fileRow(f,fmtSize(f.size))).join('')+'</div>':''}
+  if(!n){
+    h+='<div class="card"><div class="empty">'+(S.files.length&&S.q?'<b>No matches</b>Try a different name.':S.tab==='fav'?'<b>No favorites yet</b>Open a file, tap the ••• button, then choose Add to Favorites.':'<b>No files yet</b>Add HTML files, or a whole folder, from the Files app, iCloud Drive or your computer.<br><button class="big" id="bigAdd">'+ico('plus')+'Add HTML files or folder</button>')+'</div></div>'}
   if(S.tab==='my'&&!standalone()&&isiOS()&&!S.tip&&S.files.length)h+='<div class="tip"><span>Tip: tap Share, then Add to Home Screen, to use this like an app.</span><button id="tipX">Hide</button></div>';
   v.innerHTML=h;
-  const b=$('#bigAdd');if(b)b.onclick=()=>$('#inFiles').click();
+  const b=$('#bigAdd');if(b)b.onclick=addMenu;
+  const bk=$('#back');if(bk)bk.onclick=()=>{S.path.pop();render();$('#home').scrollTop=0};
   const t=$('#tipX');if(t)t.onclick=()=>{S.tip=true;LS.set('tipHidden',true);render()}}
 
 function renderSettings(v){
@@ -264,16 +287,28 @@ function renderSettings(v){
   let armed=0;$('#sWipe').onclick=e=>{const b=e.currentTarget;if(!S.files.length){toast('There are no files to remove.');return}if(!armed){armed=1;b.textContent='Tap again to remove everything';setTimeout(()=>{armed=0;if(b.isConnected)b.textContent='Remove all files'},3500);return}
     S.files=[];DB.clear();render();toast('All files removed.')}}
 
-$$('.tabs button').forEach(b=>b.onclick=()=>{S.tab=b.dataset.tab;render();$('#home').scrollTop=0});
+$$('.tabs button').forEach(b=>b.onclick=()=>{if(b.dataset.tab==='my'&&S.tab==='my')S.path=[];S.tab=b.dataset.tab;render();$('#home').scrollTop=0});
 $('#q').addEventListener('input',e=>{S.q=e.target.value;render()});
-$('#bAdd').onclick=()=>$('#inFiles').click();
+$('#bAdd').onclick=addMenu;
 $('#inFiles').onchange=e=>{addFiles([...e.target.files]);e.target.value=''};
+$('#inDir').onchange=e=>{addFiles([...e.target.files]);e.target.value=''};
 
 async function addFiles(fs){
+  const total=fs.length;
   fs=fs.filter(f=>/\.(x?html?|shtml)$/i.test(f.name)||/html/.test(f.type));
-  if(!fs.length){toast('Choose files ending in .html or .htm.');return}
-  for(const f of fs){const rec={id:uid(),name:f.name,size:f.size,blob:f,fav:false,added:Date.now()};S.files.push(rec);await DB.put(rec)}
-  render();toast(fs.length===1?'Added '+fs[0].name:'Added '+fs.length+' files');
+  if(!fs.length){toast(total?'No .html files found in that selection.':'Choose files ending in .html or .htm.');return}
+  const key=(rel,n)=>rel.join('/')+'/'+n;
+  const have=new Map(S.files.map(x=>[key(relOf(x),x.name),x]));
+  let add=0,upd=0;const tops=new Set();
+  for(const f of fs){
+    const rel=f.webkitRelativePath?f.webkitRelativePath.split('/').slice(0,-1):[];if(rel.length)tops.add(rel[0]);
+    const ex=have.get(key(rel,f.name));
+    if(ex){ex.blob=f;ex.size=f.size;await DB.put(ex);upd++}
+    else{const rec={id:uid(),name:f.name,rel,size:f.size,blob:f,fav:false,added:Date.now()};S.files.push(rec);have.set(key(rel,f.name),rec);await DB.put(rec);add++}}
+  S.tab='my';S.path=[];S.q='';$('#q').value='';
+  render();
+  const where=tops.size===1?' from '+clean([...tops][0]):'';
+  toast(fs.length===1&&!tops.size?'Added '+clean(fs[0].name):(add?'Added '+add+' file'+(add===1?'':'s'):'')+(add&&upd?', ':'')+(upd?'Updated '+upd:'')+where);
   try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}}
 
 /* drag and drop (desktop, iPad with trackpad) */
@@ -285,12 +320,13 @@ addEventListener('drop',e=>{e.preventDefault();dn=0;document.body.classList.remo
 
 /* tap opens, long press or right-click opens file actions */
 (()=>{const v=$('#view');let timer=0,fired=false,sx=0,sy=0;
-  v.addEventListener('pointerdown',e=>{const r=e.target.closest('.row');if(!r)return;fired=false;sx=e.clientX;sy=e.clientY;timer=setTimeout(()=>{fired=true;fileSheet(r.dataset.id)},550)});
+  v.addEventListener('pointerdown',e=>{const r=e.target.closest('.row');if(!r)return;fired=false;sx=e.clientX;sy=e.clientY;timer=setTimeout(()=>{fired=true;rowSheet(r)},550)});
   const cancel=()=>clearTimeout(timer);
   v.addEventListener('pointermove',e=>{if(Math.abs(e.clientX-sx)+Math.abs(e.clientY-sy)>10)cancel()});
   v.addEventListener('pointerup',cancel);v.addEventListener('pointercancel',cancel);v.addEventListener('pointerleave',cancel);
-  v.addEventListener('contextmenu',e=>{const r=e.target.closest('.row');if(r){e.preventDefault();cancel();fired=true;fileSheet(r.dataset.id)}});
-  v.addEventListener('click',e=>{const r=e.target.closest('.row');if(!r)return;if(fired){fired=false;return}openFile(r.dataset.id)})})();
+  v.addEventListener('contextmenu',e=>{const r=e.target.closest('.row');if(r){e.preventDefault();cancel();fired=true;rowSheet(r)}});
+  v.addEventListener('click',e=>{const r=e.target.closest('.row');if(!r)return;if(fired){fired=false;return}if(r.dataset.dir!==undefined){S.path=S.dirList[+r.dataset.dir].path;render();$('#home').scrollTop=0}else openFile(r.dataset.id)})})();
+function rowSheet(r){if(r.dataset.dir!==undefined)dirSheet(+r.dataset.dir);else fileSheet(r.dataset.id)}
 
 /* ---------- reading ---------- */
 function decodeBytes(buf){
@@ -433,7 +469,7 @@ const SANDBOX='allow-scripts allow-same-origin allow-forms allow-modals allow-po
 async function openFile(id){
   const f=S.files.find(x=>x.id===id);if(!f)return;
   S.cur=f;S.mode=S.set.display;S.net=S.set.net;
-  $('#rTitle').textContent=f.name;$('#reader').hidden=false;document.body.style.overflow='hidden';
+  $('#rTitle').textContent=clean(f.name);$('#reader').hidden=false;document.body.style.overflow='hidden';
   setMode(S.mode,true);await loadFrame()}
 async function loadFrame(){
   const f=S.cur;if(!f)return;
@@ -492,6 +528,10 @@ $('#layer').addEventListener('click',async e=>{
   if(a.startsWith('font:')){stepFont(a.slice(5));return}
   if(a.startsWith('mode:')){hideMenus();setMode(a.slice(5));return}
   if(a.startsWith('net:')){const v=a.slice(4)==='true';hideMenus();if(v!==S.net){S.net=v;toast(v?'Network access allowed':'Network access blocked');loadFrame()}return}
+  if(a==='addf'){hideMenus();$('#inFiles').click();return}
+  if(a==='addd'){hideMenus();$('#inDir').click();return}
+  if(a==='opendir'){hideMenus();if(S.dsel){S.path=S.dsel.path;render();$('#home').scrollTop=0}return}
+  if(a==='deldir'){hideMenus();if(S.dsel)removeDir(S.dsel);return}
   if(a==='reload'){hideMenus();loadFrame();return}
   if(a==='fav'){hideMenus();toggleFav(f);return}
   if(a==='share'){hideMenus();shareFile(f);return}
@@ -504,6 +544,13 @@ async function shareFile(f){
     const a=document.createElement('a');a.href=URL.createObjectURL(f.blob);a.download=f.name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},2000);toast('Saved '+f.name)
   }catch(e){if(e&&e.name!=='AbortError')toast('Sharing is not available here.')}}
 function removeFile(id){S.files=S.files.filter(x=>x.id!==id);DB.del(id);if(S.cur&&S.cur.id===id)closeReader();else render();toast('Removed')}
+function addMenu(){S.sheet=null;
+  $('#m1').innerHTML=mi('addf','doc','Add HTML Files')+mi('addd','folder','Add Folder');
+  $('#m2').hidden=true;showLayer(true)}
+function dirSheet(i){const d=S.dirList[i];if(!d)return;S.sheet=null;S.dsel=d;
+  $('#m1').innerHTML=mi('opendir','folder','Open')+'<hr><button data-a="deldir" class="del">'+ico('trash')+'<span>Delete folder</span></button>';
+  $('#m2').hidden=true;showLayer(true)}
+function removeDir(d){const gone=S.files.filter(f=>inPath(f,d.path));gone.forEach(f=>DB.del(f.id));S.files=S.files.filter(f=>!inPath(f,d.path));render();toast('Removed '+clean(d.name))}
 function fileSheet(id){
   const f=S.files.find(x=>x.id===id);if(!f)return;S.sheet=f;
   $('#m1').innerHTML=mi('open','open','Open')+mi('fav','star',f.fav?'Remove from Favorites':'Add to Favorites')+mi('share','share','Share')+'<hr><button data-a="del" class="del">'+ico('trash')+'<span>Delete</span></button>';
