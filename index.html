@@ -282,7 +282,7 @@ async function scanAll(){if(scanning)return;scanning=true;let n=0;
   try{for(const f of S.files.slice()){if(f.meta!==undefined)continue;
     try{const cfg=extractCfg(decodeBytes(await f.blob.arrayBuffer()));f.meta=cfg?buildMeta(cfg):null}catch(e){f.meta=null}
     LS.set('m.'+f.id,f.meta);
-    if(++n%4===0&&$('#reader').hidden&&S.tab!=='set')render();
+    if(++n%40===0&&$('#reader').hidden&&S.tab!=='set'&&!$('#q').value)render();
     await new Promise(r=>setTimeout(r,0))}}
   finally{scanning=false}
   if(n&&$('#reader').hidden&&S.tab!=='set')render()}
@@ -302,10 +302,11 @@ function render(){
   const v=$('#view');
   if(S.tab==='set'){renderSettings(v);return}
   let h='',n=0;S.dirList=[];
+  if(S.filt!=='all')h+='<button class="crumb" id="clrf">'+ico('chev')+'Show all files</button>';
   if(S.files.length){const scope=S.tab==='fav'?S.files.filter(f=>f.fav):S.files,cn={all:scope.length,new:0,prog:0,done:0};scope.forEach(f=>{cn[prog(f).k]++});
     h+='<div class="chips" role="group" aria-label="Filter by status">'+FILT.map(([k,l])=>'<button class="chip" data-filt="'+k+'" aria-pressed="'+(S.filt===k)+'">'+l+' ('+cn[k]+')</button>').join('')+'</div>'}
   if(flat){const items=flatList();n=items.length;
-    h=n?'<div class="card">'+items.map(f=>fileRow(f,(relOf(f).length?relOf(f).map(clean).join(' › ')+' · ':'')+fmtSize(f.size))).join('')+'</div>':''}
+    h+=n?'<div class="card">'+items.map(f=>fileRow(f,(relOf(f).length?relOf(f).map(clean).join(' › ')+' · ':'')+fmtSize(f.size))).join('')+'</div>':''}
   else{const {dirs,files}=browse();n=dirs.length+files.length;S.dirList=dirs;
     if(S.path.length)h+='<button class="crumb" id="back">'+ico('chev')+esc(S.path.length>1?clean(S.path[S.path.length-2]):'All files')+'</button>';
     h+=n?'<div class="card">'+dirs.map((d,i)=>'<button class="row" data-dir="'+i+'"><span class="fi dir">'+ico('folder')+'</span><span class="tx"><span class="nm">'+esc(clean(d.name))+'</span><span class="sz">'+d.count+' file'+(d.count===1?'':'s')+dirDone(d.path)+'</span></span>'+ico('chev','chev')+'</button>').join('')+files.map(f=>fileRow(f,fmtSize(f.size))).join('')+'</div>':''}
@@ -314,7 +315,8 @@ function render(){
   if(S.tab==='my'&&!standalone()&&isiOS()&&!S.tip&&S.files.length)h+='<div class="tip"><span>Tip: tap Share, then Add to Home Screen, to use this like an app.</span><button id="tipX">Hide</button></div>';
   v.innerHTML=h;
   const b=$('#bigAdd');if(b)b.onclick=addMenu;
-  $$('[data-filt]').forEach(c=>c.onclick=()=>{S.filt=c.dataset.filt;render();$('#home').scrollTop=0});
+  const cf=$('#clrf');if(cf)cf.onclick=()=>{S.filt='all';render();$('#home').scrollTop=0};
+  $$('[data-filt]').forEach(c=>c.onclick=()=>{S.filt=(c.dataset.filt===S.filt?'all':c.dataset.filt);render();$('#home').scrollTop=0});
   const bk=$('#back');if(bk)bk.onclick=()=>{S.path.pop();render();$('#home').scrollTop=0};
   const t=$('#tipX');if(t)t.onclick=()=>{S.tip=true;LS.set('tipHidden',true);render()}}
 
@@ -340,7 +342,7 @@ function renderSettings(v){
   let armed=0;$('#sWipe').onclick=e=>{const b=e.currentTarget;if(!S.files.length){toast('There are no files to remove.');return}if(!armed){armed=1;b.textContent='Tap again to remove everything';setTimeout(()=>{armed=0;if(b.isConnected)b.textContent='Remove all files'},3500);return}
     S.files.forEach(f=>dropMeta(f.id));S.files=[];DB.clear();render();toast('All files removed.')}}
 
-$$('.tabs button').forEach(b=>b.onclick=()=>{if(b.dataset.tab==='my'&&S.tab==='my')S.path=[];S.tab=b.dataset.tab;render();$('#home').scrollTop=0});
+$$('.tabs button').forEach(b=>b.onclick=()=>{if(b.dataset.tab==='my'&&S.tab==='my')S.path=[];S.tab=b.dataset.tab;S.filt='all';render();$('#home').scrollTop=0});
 $('#q').addEventListener('input',e=>{S.q=e.target.value;render()});
 $('#bAdd').onclick=addMenu;
 $('#inFiles').onchange=e=>{addFiles([...e.target.files]);e.target.value=''};
@@ -611,7 +613,7 @@ function fileSheet(id){
 
 /* ---------- toast ---------- */
 let tt=0;function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('show'),2600)}
-addEventListener('keydown',e=>{if(e.key==='Escape'){if(!$('#layer').hidden)hideMenus();else if(!$('#reader').hidden)closeReader()}});
+addEventListener('keydown',e=>{if(e.key==='Escape'){if(!$('#layer').hidden)hideMenus();else if($('#reader').hidden&&S.filt!=='all'){S.filt='all';render()}else if(!$('#reader').hidden)closeReader()}});
 
 /* ---------- start ---------- */
 (async function(){
